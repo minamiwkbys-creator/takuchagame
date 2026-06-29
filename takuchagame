@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>たくちゃの商店街ランニング</title>
+    <style>
+        body {
+            margin: 0;
+            background: #222;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        h1 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #fff;
+            text-shadow: 2px 2px #000;
+        }
+        #canvasContainer {
+            position: relative;
+            cursor: pointer;
+        }
+        canvas {
+            border: 4px solid #fff;
+            background: #80b0ff; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.7);
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .msg {
+            font-size: 20px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.8);
+            padding: 15px 25px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #fff;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>たくちゃの商店街ランニング</h1>
+    <div id="canvasContainer">
+        <canvas id="gameCanvas" width="600" height="350"></canvas>
+        <div id="ui">
+            <div id="startMessage" class="msg">クリック 又は スペースキーでスタート！<br><span style="font-size:14px; color:#ccc;">にんじんを避けていっぱい街を走ろう！</span></div>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const ui = document.getElementById('ui');
+const startMessage = document.getElementById('startMessage');
+
+let gameState = 'START'; 
+let score = 0;
+let frameCount = 0;
+
+const GROUND_Y = canvas.height - 50;
+const D = 3; // ドットの基本サイズ
+
+// カラーパレット
+const PALETTE = {
+    skin: '#fce0a0',      
+    takachaHair: '#2b2b2b', // たくちゃの黒髪
+    yokoharaHair: '#fcd040', // よこはらの金髪
+    shirtGreen: '#32a852',  
+    pantsBlue: '#3252a8',   
+    shoesRed: '#e63946',    
+    brick: '#c46845',
+    window: '#e0f7fa'
+};
+
+// プレイヤー（たくちゃ）
+const player = {
+    x: 80,
+    y: GROUND_Y - (14 * D),
+    baseWidth: 12 * D,
+    baseHeight: 14 * D,
+    width: 12 * D,
+    height: 14 * D,
+    gravity: 0.5,      
+    jumpForce: -12.5,  
+    velocity: 0,
+    isGrounded: true,
+    isBig: false,
+    bigTimer: 0
+};
+
+// 障害物（にんじん）
+let obstacles = [];
+const obstacleSpeed = 4.5;
+let spawnTimer = 0;
+let nextSpawnInterval = 100;
+
+// アイテム（のりまき）
+let items = [];
+
+// 商店街の背景
+let shops = [];
+let shopSpawnCount = 0; 
+const shopTemplates = [
+    { name: '八百屋', wall: '#ffeed1', roof: '#e65c5c', tent: '#4caf50' },
+    { name: 'パン屋', wall: '#ffd1dc', roof: '#5c8ae6', tent: '#ff9800' },
+    { name: 'カフェ', wall: '#e0f2f1', roof: '#8d6e63', tent: '#009688' },
+    { name: '本屋', wall: '#ede7f6', roof: '#7e57c2', tent: '#9c27b0' }
+];
+
+function initShops() {
+    shops = [];
+    shopSpawnCount = 0;
+    for(let i = 0; i < 4; i++) {
+        let temp = shopTemplates[i % shopTemplates.length];
+        shops.push({
+            x: i * 180,
+            width: 140,
+            height: 130,
+            name: temp.name,
+            wall: temp.wall,
+            roof: temp.roof,
+            tent: temp.tent,
+            yokohara: {
+                hasSpawned: false,
+                hasThrown: false,
+                isEaten: false,
+                throwTimer: 0
+            }
+        });
+    }
+}
+
+function drawDot(x, y, size, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), size, size);
+}
+
+// MOTHER風2頭身ドット絵描画
+function drawCharacter(x, y, type, animFrame, customScale = 1.0) {
+    const legPattern = Math.floor(animFrame / 8) % 2;
+    const currentD = D * customScale;
+    const bobbing = (legPattern === 0 && gameState === 'PLAYING') ? currentD : 0;
+    const hairColor = (type === 'takacha') ? PALETTE.takachaHair : PALETTE.yokoharaHair;
+
+    ctx.save();
+    ctx.translate(x, y + bobbing);
+
+    // 髪の毛
+    ctx.fillStyle = hairColor;
+    if (type === 'takacha') {
+        // ★たくちゃ：丸っこい黒髪マッシュヘア（おでこの分け目を無くしました）
+        ctx.fillRect(2*currentD, 0, 8*currentD, currentD);
+        ctx.fillRect(1*currentD, currentD, 10*currentD, currentD);
+        ctx.fillRect(0, 2*currentD, 12*currentD, currentD);
+        ctx.fillRect(0, 3*currentD, 12*currentD, currentD);
+    } else {
+        // よこはら：短髪金髪マッシュ
+        ctx.fillRect(3*currentD, 0, 6*currentD, currentD);
+        ctx.fillRect(1*currentD, currentD, 10*currentD, currentD);
+        ctx.fillRect(1*currentD, 2*currentD, 10*currentD, currentD);
+        ctx.fillRect(1*currentD, 3*currentD, 10*currentD, currentD);
+        ctx.fillStyle = PALETTE.skin;
+        ctx.fillRect(4*currentD, 3*currentD, 4*currentD, currentD); // おでこ広め
+    }
+
+    // 顔・輪郭
+    ctx.fillStyle = PALETTE.skin;
+    ctx.fillRect(1*currentD, 4*currentD, 10*currentD, 3*currentD);
+    
+    // 横髪
+    ctx.fillStyle = hairColor;
+    ctx.fillRect(0, 4*currentD, 2*currentD, currentD);
+    ctx.fillRect(10*currentD, 4*currentD, 2*currentD, currentD);
+    if (type === 'takacha') {
+        ctx.fillRect(0, 5*currentD, 2*currentD, currentD);
+        ctx.fillRect(10*currentD, 5*currentD, 2*currentD, currentD);
+    }
+
+    // 目
+    ctx.fillStyle = '#000';
+    ctx.fillRect(4*currentD, 5*currentD, currentD, 1.5*currentD);
+    ctx.fillRect(7*currentD, 5*currentD, currentD, 1.5*currentD);
+
+    // 口
+    ctx.fillStyle = '#e63946';
+    ctx.fillRect(5.5*currentD, 7*currentD, currentD, currentD);
+
+    // 服
+    ctx.fillStyle = (type === 'takacha') ? PALETTE.shirtGreen : '#ff6b35';
+    ctx.fillRect(3*currentD, 8*currentD, 6*currentD, 3*currentD);
+    if (legPattern === 0) {
+        ctx.fillRect(2*currentD, 8*currentD, currentD, 2*currentD);
+        ctx.fillRect(9*currentD, 9*currentD, currentD, 2*currentD);
+    } else {
+        ctx.fillRect(2*currentD, 9*currentD, currentD, 2*currentD);
+        ctx.fillRect(9*currentD, 8*currentD, currentD, 2*currentD);
+    }
+
+    // ズボン
+    ctx.fillStyle = PALETTE.pantsBlue;
+    ctx.fillRect(3*currentD, 11*currentD, 6*currentD, 2*currentD);
+
+    // 足
+    ctx.fillStyle = PALETTE.shoesRed;
+    if (legPattern === 0) {
+        ctx.fillRect(2*currentD, 13*currentD, 2*currentD, currentD);
+        ctx.fillRect(6*currentD, 13*currentD, 2*currentD, currentD);
+    } else {
+        ctx.fillRect(4*currentD, 13*currentD, 2*currentD, currentD);
+        ctx.fillRect(8*currentD, 13*currentD, 2*currentD, currentD);
+    }
+
+    ctx.restore();
+}
+
+// 背景と地上のよこはらの描画
+function drawShoppingStreet() {
+    shops.forEach(shop => {
+        if (gameState === 'PLAYING') shop.x -= 1.5;
+        
+        if (shop.x + shop.width < 0) {
+            shop.x = canvas.width + Math.random() * 30;
+            shopSpawnCount++; 
+
+            // お店が7軒流れるごとに1回確実に出現
+            if (shopSpawnCount % 7 === 0) {
+                shop.yokohara.hasSpawned = true;
+            } else {
+                shop.yokohara.hasSpawned = false;
+            }
+            
+            shop.yokohara.hasThrown = false;
+            shop.yokohara.isEaten = false;
+            shop.yokohara.throwTimer = 0;
+        }
+
+        const sy = GROUND_Y - shop.height;
+
+        // 建物
+        ctx.fillStyle = shop.roof;
+        ctx.fillRect(shop.x - 5, sy - 15, shop.width + 10, 15);
+        ctx.fillStyle = shop.wall;
+        ctx.fillRect(shop.x, sy, shop.width, shop.height);
+
+        // テント
+        ctx.fillStyle = shop.tent;
+        ctx.fillRect(shop.x, sy + 5, shop.width, 15);
+        ctx.fillStyle = '#fff';
+        for(let j=10; j<shop.width; j+=30) {
+            ctx.fillRect(shop.x + j, sy + 5, 15, 15);
+        }
+
+        // 看板
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(shop.x + 20, sy - 12, shop.width - 40, 12);
+        ctx.fillStyle = '#fff';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(shop.name, shop.x + shop.width/2, sy - 2);
+
+        // 窓
+        ctx.fillStyle = PALETTE.window;
+        ctx.fillRect(shop.x + 50, sy + 30, 40, 40);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(shop.x + 50, sy + 30, 40, 40);
+
+        // ドア
+        ctx.fillStyle = '#795548';
+        ctx.fillRect(shop.x + 15, GROUND_Y - 45, 25, 45);
+
+        // 地上のよこはら
+        if (shop.yokohara.hasSpawned) {
+            let yokoX = shop.x + shop.width - 25;
+            let yokoY = GROUND_Y - (14 * D);
+            
+            drawCharacter(yokoX, yokoY, 'yokohara', frameCount, 1.0);
+
+            if (!shop.yokohara.hasThrown && gameState === 'PLAYING') {
+                shop.yokohara.throwTimer++;
+                if (shop.yokohara.throwTimer === 20) {
+                    items.push({
+                        x: yokoX - 10,
+                        y: yokoY,
+                        width: 22,
+                        height: 22,
+                        vY: -4,  
+                        vX: -2,  
+                        isGrounded: false,
+                        parentShop: shop 
+                    });
+                    shop.yokohara.hasThrown = true;
+                }
+            }
+
+            let msg = '「たくちゃ!」';
+            if (shop.yokohara.isEaten) {
+                msg = '「おつかいがんばれ!」';
+            }
+
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+
+            let textWidth = ctx.measureText(msg).width + 16;
+            ctx.fillRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
+            ctx.strokeRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
+            
+            ctx.fillStyle = '#000';
+            ctx.fillText(msg, yokoX + 15, yokoY - 13);
+        }
+    });
+}
+
+function drawCuteGround() {
+    ctx.fillStyle = PALETTE.brick;
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+    ctx.fillStyle = '#e69573'; 
+    for(let x = 0; x < canvas.width; x += 24) {
+        ctx.fillRect(x, GROUND_Y + 4, 16, 6);
+        ctx.fillRect(x + 12, GROUND_Y + 16, 16, 6);
+    }
+}
+
+// にんじん（障害物）の処理
+function handleObstacles() {
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        if (gameState === 'PLAYING') {
+            if (obs.isKicked) {
+                obs.x += 8;
+                obs.kickedVY += 0.5;
+                obs.y += obs.kickedVY;
+            } else {
+                obs.x -= obstacleSpeed;
+            }
+        }
+
+        let obsY = obs.isKicked ? obs.y : (GROUND_Y - obs.height);
+
+        // にんじん描画
+        ctx.fillStyle = '#ff6600';
+        ctx.beginPath();
+        ctx.moveTo(obs.x, obsY);
+        ctx.lineTo(obs.x + obs.width, obsY);
+        ctx.lineTo(obs.x + obs.width/2, obsY + obs.height);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#22b14c';
+        ctx.fillRect(obs.x + obs.width/2 - 4, obsY - 8, 8, 8);
+
+        if (!obs.isKicked && obs.x + obs.width < player.x && !obs.passed) {
+            score++; obs.passed = true;
+        }
+
+        // 衝突判定
+        if (!obs.isKicked &&
+            player.x < obs.x + obs.width && player.x + player.width > obs.x &&
+            player.y < obsY + obs.height && player.y + player.height > obsY
+        ) {
+            if (player.isBig) {
+                obs.isKicked = true;
+                obs.y = obsY;
+                obs.kickedVY = -8;
+                score += 2; 
+            } else {
+                gameState = 'GAMEOVER';
+                startMessage.innerHTML = `GAME OVER<br><span style="color:#ffeb3b;">SCORE: ${score}</span><br><span style="font-size:16px; color:#fff;">クリックで再挑戦</span>`;
+                ui.style.display = 'flex';
+            }
+        }
+
+        if (obs.x > canvas.width || obs.x + obs.width < 0) obstacles.splice(i, 1);
+    }
+}
+
+// のりまきの処理
+function handleItems() {
+    for (let i = items.length - 1; i >= 0; i--) {
+        let item = items[i];
+        if (gameState === 'PLAYING') {
+            item.x += item.vX; 
+            item.vX *= 0.95;   
+            
+            if (!item.isGrounded) {
+                item.y += item.vY;
+                item.vY += 0.2; 
+                if (item.y + item.height >= GROUND_Y) {
+                    item.y = GROUND_Y - item.height; item.isGrounded = true;
+                    item.vX = -1.5; 
+                }
+            } else {
+                item.x -= 1.5; 
+            }
+        }
+
+        // のりまき
+        ctx.fillStyle = '#111'; ctx.fillRect(item.x, item.y, item.width, item.height);
+        ctx.fillStyle = '#fff'; ctx.fillRect(item.x + 3, item.y + 3, item.width - 6, item.height - 6);
+        ctx.fillStyle = '#ff3333'; ctx.fillRect(item.x + 8, item.y + 8, item.width - 16, item.height - 16);
+
+        // キャッチ
+        if (player.x < item.x + item.width && player.x + player.width > item.x &&
+            player.y < item.y + item.height && player.y + player.height > item.y) {
+            
+            player.isBig = true;
+            player.bigTimer = 300; 
+            player.width = player.baseWidth * 1.6;
+            player.height = player.baseHeight * 1.6;
+
+            if (item.parentShop) {
+                item.parentShop.yokohara.isEaten = true;
+            }
+
+            items.splice(i, 1);
+            continue;
+        }
+        if (item.x + item.width < 0) items.splice(i, 1);
+    }
+}
+
+function drawScore() {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    let text = `SCORE: ${score}`;
+    if (player.isBig) {
+        text += ` 🔥むてきキック中! (${Math.ceil(player.bigTimer / 60)})`;
+        ctx.fillStyle = '#ffeb3b';
+    }
+    ctx.strokeText(text, 20, 35); ctx.fillText(text, 20, 35);
+}
+
+function resetGame() {
+    player.width = player.baseWidth; player.height = player.baseHeight;
+    player.y = GROUND_Y - player.height;
+    player.velocity = 0; player.isGrounded = true;
+    player.isBig = false; player.bigTimer = 0;
+    obstacles = []; items = []; score = 0; spawnTimer = 0;
+    initShops();
+}
+
+function gameLoop() {
+    frameCount++;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drawShoppingStreet();
+    drawCuteGround();
+
+    if (gameState === 'PLAYING') {
+        if (player.isBig) {
+            player.bigTimer--;
+            if (player.bigTimer <= 0) {
+                player.isBig = false;
+                player.width = player.baseWidth; player.height = player.baseHeight;
+                player.y = GROUND_Y - player.height;
+            }
+        }
+
+        player.velocity += player.gravity;
+        player.y += player.velocity;
+
+        if (player.y + player.height >= GROUND_Y) {
+            player.y = GROUND_Y - player.height;
+            player.velocity = 0; player.isGrounded = true;
+        }
+
+        spawnTimer++;
+        if (spawnTimer >= nextSpawnInterval) {
+            // ★にんじんの「高さ」をランダム化（25px〜55px）
+            let randHeight = Math.floor(Math.random() * 30) + 25;
+            // 高さに合わせて横幅も少し比率を変える（18px〜32px）
+            let randWidth = Math.floor(randHeight * 0.6) + 3;
+
+            obstacles.push({ 
+                x: canvas.width, 
+                width: randWidth, 
+                height: randHeight, 
+                isKicked: false, 
+                kickedVY: 0 
+            });
+
+            spawnTimer = 0;
+            nextSpawnInterval = Math.floor(Math.random() * 80) + 60; 
+        }
+    }
+
+    handleItems();
+    handleObstacles();
+    
+    // たくちゃ描画
+    let currentScale = player.isBig ? 1.6 : 1.0;
+    let currentY = player.isBig ? (GROUND_Y - player.height) : player.y;
+    drawCharacter(player.x, currentY, 'takacha', frameCount, currentScale);
+    
+    drawScore();
+    requestAnimationFrame(gameLoop);
+}
+
+function triggerAction(e) {
+    if (e.type === 'keydown' && e.code !== 'Space') return;
+    if (e.cancelable) e.preventDefault();
+
+    if (gameState === 'START') {
+        gameState = 'PLAYING'; ui.style.display = 'none'; initShops();
+    } else if (gameState === 'PLAYING') {
+        if (player.isGrounded) {
+            player.velocity = player.jumpForce; player.isGrounded = false;
+        }
+    } else if (gameState === 'GAMEOVER') {
+        resetGame(); gameState = 'PLAYING'; ui.style.display = 'none';
+    }
+}
+
+window.addEventListener('mousedown', triggerAction);
+window.addEventListener('touchstart', triggerAction, { passive: false });
+window.addEventListener('keydown', triggerAction);
+
+initShops();
+gameLoop();
+</script>
+</body>
+</html>
