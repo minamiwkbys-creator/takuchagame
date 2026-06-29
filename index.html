@@ -2,37 +2,43 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>たくちゃの商店街ランニング</title>
     <style>
         body {
             margin: 0;
-            background: #222;
+            background: #2b2b2b;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            color: white;
+            color: #f5f5f5;
             font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
             overflow: hidden;
             user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
         }
         h1 {
-            font-size: 18px;
-            margin-bottom: 10px;
-            color: #fff;
-            text-shadow: 2px 2px #000;
+            font-size: 16px;
+            margin: 5px 0;
+            color: #eceff1;
+            text-shadow: 1px 1px #37474f;
         }
         #canvasContainer {
             position: relative;
-            cursor: pointer;
+            width: 95vw; 
+            max-width: 600px;
         }
         canvas {
-            border: 4px solid #fff;
-            background: #80b0ff; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.7);
+            border: 4px solid #cfd8dc;
+            /* ★目に優しいくすんだペールブルーに変更 */
+            background: #b0c8f0; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
             display: block;
+            width: 100%; 
+            height: auto;
         }
         #ui {
             position: absolute;
@@ -43,17 +49,19 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.25);
         }
         .msg {
-            font-size: 20px;
+            font-size: 16px;
             font-weight: bold;
-            background: rgba(0,0,0,0.8);
-            padding: 15px 25px;
+            background: rgba(40,40,40,0.9);
+            padding: 12px 20px;
             border-radius: 8px;
             text-align: center;
-            border: 2px solid #fff;
+            border: 2px solid #cfd8dc;
             line-height: 1.6;
+            width: 80%;
+            color: #fff;
         }
     </style>
 </head>
@@ -63,7 +71,7 @@
     <div id="canvasContainer">
         <canvas id="gameCanvas" width="600" height="350"></canvas>
         <div id="ui">
-            <div id="startMessage" class="msg">クリック 又は スペースキーでスタート！<br><span style="font-size:14px; color:#ccc;">にんじんを避けていっぱい街を走ろう！</span></div>
+            <div id="startMessage" class="msg">画面をタップ 又は スペースで開始！</div>
         </div>
     </div>
 
@@ -78,21 +86,22 @@ let score = 0;
 let frameCount = 0;
 
 const GROUND_Y = canvas.height - 50;
-const D = 3; // ドットの基本サイズ
+const D = 3; 
 
-// カラーパレット
+// ★全体的に彩度を落とした、目に優しいマイルドなカラーパレット
 const PALETTE = {
-    skin: '#fce0a0',      
-    takachaHair: '#2b2b2b', // たくちゃの黒髪
-    yokoharaHair: '#fcd040', // よこはらの金髪
-    shirtGreen: '#32a852',  
-    pantsBlue: '#3252a8',   
-    shoesRed: '#e63946',    
-    brick: '#c46845',
-    window: '#e0f7fa'
+    skin: '#fcdcb0',      
+    takachaHair: '#3a3a3a', 
+    yokoharaHair: '#edd06d', // 落ち着いたマスタード金髪
+    shirtGreen: '#5fa375',   // くすんだ緑
+    pantsBlue: '#5c7299',    // グレイッシュな青
+    shoesRed: '#d16262',     // 優しいあずき色系の赤
+    brick: '#ad6c56',        // 落ち着いたレンガ色
+    window: '#e3f2fd',
+    carrotOrange: '#f58247', // チカチカしないにんじん色
+    carrotLeaf: '#7cb374'    // 優しい葉っぱの緑
 };
 
-// プレイヤー（たくちゃ）
 const player = {
     x: 80,
     y: GROUND_Y - (14 * D),
@@ -105,254 +114,162 @@ const player = {
     velocity: 0,
     isGrounded: true,
     isBig: false,
-    bigTimer: 0
+    bigTimer: 0,
+    startMessageTimer: 0 // ★「がんばるぞ！」用のタイマー
 };
 
-// 障害物（にんじん）
 let obstacles = [];
 const obstacleSpeed = 4.5;
 let spawnTimer = 0;
 let nextSpawnInterval = 100;
-
-// アイテム（のりまき）
 let items = [];
-
-// 商店街の背景
 let shops = [];
 let shopSpawnCount = 0; 
+
+// ★お店のカラーもパレット調の優しいトーンに変更
 const shopTemplates = [
-    { name: '八百屋', wall: '#ffeed1', roof: '#e65c5c', tent: '#4caf50' },
-    { name: 'パン屋', wall: '#ffd1dc', roof: '#5c8ae6', tent: '#ff9800' },
-    { name: 'カフェ', wall: '#e0f2f1', roof: '#8d6e63', tent: '#009688' },
-    { name: '本屋', wall: '#ede7f6', roof: '#7e57c2', tent: '#9c27b0' }
+    { name: '八百屋', wall: '#f5eae1', roof: '#cc7474', tent: '#81b393' },
+    { name: 'パン屋', wall: '#ede1d1', roof: '#7093c4', tent: '#d9a773' },
+    { name: 'カフェ', wall: '#e1edea', roof: '#948279', tent: '#6ba69e' },
+    { name: '本屋', wall: '#e8e1ed', roof: '#8d7cb3', tent: '#a37ca8' }
 ];
 
+const charCache = {};
+function preRenderCharacters() {
+    ['takacha', 'yokohara'].forEach(type => {
+        charCache[type] = [];
+        for (let pattern = 0; pattern < 2; pattern++) {
+            const cCanvas = document.createElement('canvas');
+            cCanvas.width = 12 * D;
+            cCanvas.height = 14 * D;
+            const cCtx = cCanvas.getContext('2d');
+            
+            const hairColor = (type === 'takacha') ? PALETTE.takachaHair : PALETTE.yokoharaHair;
+            cCtx.fillStyle = hairColor;
+            
+            if (type === 'takacha') {
+                // たくちゃ：丸っこい黒髪マッシュヘア
+                cCtx.fillRect(2*D, 0, 8*D, D); cCtx.fillRect(1*D, D, 10*D, D);
+                cCtx.fillRect(0, 2*D, 12*D, D); cCtx.fillRect(0, 3*D, 12*D, D);
+            } else {
+                cCtx.fillRect(3*D, 0, 6*D, D); cCtx.fillRect(1*D, D, 10*D, D);
+                cCtx.fillRect(1*D, 2*D, 10*D, D); cCtx.fillRect(1*D, 3*D, 10*D, D);
+                cCtx.fillStyle = PALETTE.skin; cCtx.fillRect(4*D, 3*D, 4*D, D); 
+            }
+            
+            cCtx.fillStyle = PALETTE.skin; cCtx.fillRect(1*D, 4*D, 10*D, 3*D);
+            cCtx.fillStyle = hairColor; cCtx.fillRect(0, 4*D, 2*D, D); cCtx.fillRect(10*D, 4*D, 2*D, D);
+            if (type === 'takacha') { cCtx.fillRect(0, 5*D, 2*D, D); cCtx.fillRect(10*D, 5*D, 2*D, D); }
+            
+            cCtx.fillStyle = '#333'; cCtx.fillRect(4*D, 5*D, D, 1.5*D); cCtx.fillRect(7*D, 5*D, D, 1.5*D);
+            cCtx.fillStyle = PALETTE.shoesRed; cCtx.fillRect(5.5*D, 7*D, D, D);
+            cCtx.fillStyle = (type === 'takacha') ? PALETTE.shirtGreen : '#e08b5c';
+            cCtx.fillRect(3*D, 8*D, 6*D, 3*D);
+            
+            if (pattern === 0) {
+                cCtx.fillRect(2*D, 8*D, D, 2*D); cCtx.fillRect(9*D, 9*D, D, 2*D);
+            } else {
+                cCtx.fillRect(2*D, 9*D, D, 2*D); cCtx.fillRect(9*D, 8*D, D, 2*D);
+            }
+            
+            cCtx.fillStyle = PALETTE.pantsBlue; cCtx.fillRect(3*D, 11*D, 6*D, 2*D);
+            cCtx.fillStyle = PALETTE.shoesRed;
+            if (pattern === 0) {
+                cCtx.fillRect(2*D, 13*D, 2*D, D); cCtx.fillRect(6*D, 13*D, 2*D, D);
+            } else {
+                cCtx.fillRect(4*D, 13*D, 2*D, D); cCtx.fillRect(8*D, 13*D, 2*D, D);
+            }
+            charCache[type].push(cCanvas);
+        }
+    });
+}
+
 function initShops() {
-    shops = [];
-    shopSpawnCount = 0;
+    shops = []; shopSpawnCount = 0;
     for(let i = 0; i < 4; i++) {
         let temp = shopTemplates[i % shopTemplates.length];
         shops.push({
-            x: i * 180,
-            width: 140,
-            height: 130,
-            name: temp.name,
-            wall: temp.wall,
-            roof: temp.roof,
-            tent: temp.tent,
-            yokohara: {
-                hasSpawned: false,
-                hasThrown: false,
-                isEaten: false,
-                throwTimer: 0
-            }
+            x: i * 180, width: 140, height: 130, name: temp.name, wall: temp.wall, roof: temp.roof, tent: temp.tent,
+            yokohara: { hasSpawned: false, hasThrown: false, isEaten: false, throwTimer: 0 }
         });
     }
 }
 
-function drawDot(x, y, size, color) {
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x), Math.round(y), size, size);
-}
-
-// MOTHER風2頭身ドット絵描画
-function drawCharacter(x, y, type, animFrame, customScale = 1.0) {
+function drawCachedCharacter(x, y, type, animFrame, scale = 1.0) {
     const legPattern = Math.floor(animFrame / 8) % 2;
-    const currentD = D * customScale;
-    const bobbing = (legPattern === 0 && gameState === 'PLAYING') ? currentD : 0;
-    const hairColor = (type === 'takacha') ? PALETTE.takachaHair : PALETTE.yokoharaHair;
-
-    ctx.save();
-    ctx.translate(x, y + bobbing);
-
-    // 髪の毛
-    ctx.fillStyle = hairColor;
-    if (type === 'takacha') {
-        // ★たくちゃ：丸っこい黒髪マッシュヘア（おでこの分け目を無くしました）
-        ctx.fillRect(2*currentD, 0, 8*currentD, currentD);
-        ctx.fillRect(1*currentD, currentD, 10*currentD, currentD);
-        ctx.fillRect(0, 2*currentD, 12*currentD, currentD);
-        ctx.fillRect(0, 3*currentD, 12*currentD, currentD);
-    } else {
-        // よこはら：短髪金髪マッシュ
-        ctx.fillRect(3*currentD, 0, 6*currentD, currentD);
-        ctx.fillRect(1*currentD, currentD, 10*currentD, currentD);
-        ctx.fillRect(1*currentD, 2*currentD, 10*currentD, currentD);
-        ctx.fillRect(1*currentD, 3*currentD, 10*currentD, currentD);
-        ctx.fillStyle = PALETTE.skin;
-        ctx.fillRect(4*currentD, 3*currentD, 4*currentD, currentD); // おでこ広め
-    }
-
-    // 顔・輪郭
-    ctx.fillStyle = PALETTE.skin;
-    ctx.fillRect(1*currentD, 4*currentD, 10*currentD, 3*currentD);
-    
-    // 横髪
-    ctx.fillStyle = hairColor;
-    ctx.fillRect(0, 4*currentD, 2*currentD, currentD);
-    ctx.fillRect(10*currentD, 4*currentD, 2*currentD, currentD);
-    if (type === 'takacha') {
-        ctx.fillRect(0, 5*currentD, 2*currentD, currentD);
-        ctx.fillRect(10*currentD, 5*currentD, 2*currentD, currentD);
-    }
-
-    // 目
-    ctx.fillStyle = '#000';
-    ctx.fillRect(4*currentD, 5*currentD, currentD, 1.5*currentD);
-    ctx.fillRect(7*currentD, 5*currentD, currentD, 1.5*currentD);
-
-    // 口
-    ctx.fillStyle = '#e63946';
-    ctx.fillRect(5.5*currentD, 7*currentD, currentD, currentD);
-
-    // 服
-    ctx.fillStyle = (type === 'takacha') ? PALETTE.shirtGreen : '#ff6b35';
-    ctx.fillRect(3*currentD, 8*currentD, 6*currentD, 3*currentD);
-    if (legPattern === 0) {
-        ctx.fillRect(2*currentD, 8*currentD, currentD, 2*currentD);
-        ctx.fillRect(9*currentD, 9*currentD, currentD, 2*currentD);
-    } else {
-        ctx.fillRect(2*currentD, 9*currentD, currentD, 2*currentD);
-        ctx.fillRect(9*currentD, 8*currentD, currentD, 2*currentD);
-    }
-
-    // ズボン
-    ctx.fillStyle = PALETTE.pantsBlue;
-    ctx.fillRect(3*currentD, 11*currentD, 6*currentD, 2*currentD);
-
-    // 足
-    ctx.fillStyle = PALETTE.shoesRed;
-    if (legPattern === 0) {
-        ctx.fillRect(2*currentD, 13*currentD, 2*currentD, currentD);
-        ctx.fillRect(6*currentD, 13*currentD, 2*currentD, currentD);
-    } else {
-        ctx.fillRect(4*currentD, 13*currentD, 2*currentD, currentD);
-        ctx.fillRect(8*currentD, 13*currentD, 2*currentD, currentD);
-    }
-
-    ctx.restore();
+    const img = charCache[type][legPattern];
+    const w = 12 * D * scale;
+    const h = 14 * D * scale;
+    const bobbing = (legPattern === 0 && gameState === 'PLAYING') ? (D * scale) : 0;
+    ctx.drawImage(img, Math.round(x), Math.round(y + bobbing), Math.round(w), Math.round(h));
 }
 
-// 背景と地上のよこはらの描画
 function drawShoppingStreet() {
     shops.forEach(shop => {
         if (gameState === 'PLAYING') shop.x -= 1.5;
-        
         if (shop.x + shop.width < 0) {
             shop.x = canvas.width + Math.random() * 30;
             shopSpawnCount++; 
-
-            // お店が7軒流れるごとに1回確実に出現
-            if (shopSpawnCount % 7 === 0) {
-                shop.yokohara.hasSpawned = true;
-            } else {
-                shop.yokohara.hasSpawned = false;
-            }
-            
-            shop.yokohara.hasThrown = false;
-            shop.yokohara.isEaten = false;
-            shop.yokohara.throwTimer = 0;
+            shop.yokohara.hasSpawned = (shopSpawnCount % 7 === 0);
+            shop.yokohara.hasThrown = false; shop.yokohara.isEaten = false; shop.yokohara.throwTimer = 0;
         }
 
         const sy = GROUND_Y - shop.height;
-
-        // 建物
-        ctx.fillStyle = shop.roof;
-        ctx.fillRect(shop.x - 5, sy - 15, shop.width + 10, 15);
-        ctx.fillStyle = shop.wall;
-        ctx.fillRect(shop.x, sy, shop.width, shop.height);
-
-        // テント
-        ctx.fillStyle = shop.tent;
-        ctx.fillRect(shop.x, sy + 5, shop.width, 15);
+        ctx.fillStyle = shop.roof; ctx.fillRect(shop.x - 5, sy - 15, shop.width + 10, 15);
+        ctx.fillStyle = shop.wall; ctx.fillRect(shop.x, sy, shop.width, shop.height);
+        ctx.fillStyle = shop.tent; ctx.fillRect(shop.x, sy + 5, shop.width, 15);
         ctx.fillStyle = '#fff';
-        for(let j=10; j<shop.width; j+=30) {
-            ctx.fillRect(shop.x + j, sy + 5, 15, 15);
-        }
+        for(let j=10; j<shop.width; j+=30) ctx.fillRect(shop.x + j, sy + 5, 15, 15);
 
-        // 看板
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(shop.x + 20, sy - 12, shop.width - 40, 12);
-        ctx.fillStyle = '#fff';
-        ctx.font = '9px sans-serif';
-        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(shop.x + 20, sy - 12, shop.width - 40, 12);
+        ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText(shop.name, shop.x + shop.width/2, sy - 2);
 
-        // 窓
-        ctx.fillStyle = PALETTE.window;
-        ctx.fillRect(shop.x + 50, sy + 30, 40, 40);
-        ctx.strokeStyle = '#666';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(shop.x + 50, sy + 30, 40, 40);
+        ctx.fillStyle = PALETTE.window; ctx.fillRect(shop.x + 50, sy + 30, 40, 40);
+        ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 2; ctx.strokeRect(shop.x + 50, sy + 30, 40, 40);
+        ctx.fillStyle = '#8d6e63'; ctx.fillRect(shop.x + 15, GROUND_Y - 45, 25, 45);
 
-        // ドア
-        ctx.fillStyle = '#795548';
-        ctx.fillRect(shop.x + 15, GROUND_Y - 45, 25, 45);
-
-        // 地上のよこはら
         if (shop.yokohara.hasSpawned) {
             let yokoX = shop.x + shop.width - 25;
             let yokoY = GROUND_Y - (14 * D);
             
-            drawCharacter(yokoX, yokoY, 'yokohara', frameCount, 1.0);
+            drawCachedCharacter(yokoX, yokoY, 'yokohara', frameCount, 1.0);
 
             if (!shop.yokohara.hasThrown && gameState === 'PLAYING') {
                 shop.yokohara.throwTimer++;
                 if (shop.yokohara.throwTimer === 20) {
-                    items.push({
-                        x: yokoX - 10,
-                        y: yokoY,
-                        width: 22,
-                        height: 22,
-                        vY: -4,  
-                        vX: -2,  
-                        isGrounded: false,
-                        parentShop: shop 
-                    });
+                    items.push({ x: yokoX - 10, y: yokoY, width: 22, height: 22, vY: -4, vX: -2, isGrounded: false, parentShop: shop });
                     shop.yokohara.hasThrown = true;
                 }
             }
 
             let msg = '「たくちゃ!」';
-            if (shop.yokohara.isEaten) {
-                msg = '「おつかいがんばれ!」';
-            }
+            if (shop.yokohara.isEaten) msg = '「おつかいがんばれ!」';
 
-            ctx.fillStyle = '#fff';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
-            ctx.font = 'bold 11px sans-serif';
-            ctx.textAlign = 'center';
-
+            ctx.fillStyle = '#fff'; ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+            ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
             let textWidth = ctx.measureText(msg).width + 16;
             ctx.fillRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
             ctx.strokeRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
-            
-            ctx.fillStyle = '#000';
-            ctx.fillText(msg, yokoX + 15, yokoY - 13);
+            ctx.fillStyle = '#333'; ctx.fillText(msg, yokoX + 15, yokoY - 13);
         }
     });
 }
 
 function drawCuteGround() {
-    ctx.fillStyle = PALETTE.brick;
-    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
-    ctx.fillStyle = '#e69573'; 
+    ctx.fillStyle = PALETTE.brick; ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+    ctx.fillStyle = '#c4846e'; 
     for(let x = 0; x < canvas.width; x += 24) {
-        ctx.fillRect(x, GROUND_Y + 4, 16, 6);
-        ctx.fillRect(x + 12, GROUND_Y + 16, 16, 6);
+        ctx.fillRect(x, GROUND_Y + 4, 16, 6); ctx.fillRect(x + 12, GROUND_Y + 16, 16, 6);
     }
 }
 
-// にんじん（障害物）の処理
 function handleObstacles() {
     for (let i = obstacles.length - 1; i >= 0; i--) {
         let obs = obstacles[i];
         if (gameState === 'PLAYING') {
             if (obs.isKicked) {
-                obs.x += 8;
-                obs.kickedVY += 0.5;
-                obs.y += obs.kickedVY;
+                obs.x += 8; obs.kickedVY += 0.5; obs.y += obs.kickedVY;
             } else {
                 obs.x -= obstacleSpeed;
             }
@@ -360,114 +277,95 @@ function handleObstacles() {
 
         let obsY = obs.isKicked ? obs.y : (GROUND_Y - obs.height);
 
-        // にんじん描画
-        ctx.fillStyle = '#ff6600';
-        ctx.beginPath();
-        ctx.moveTo(obs.x, obsY);
-        ctx.lineTo(obs.x + obs.width, obsY);
-        ctx.lineTo(obs.x + obs.width/2, obsY + obs.height);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = '#22b14c';
-        ctx.fillRect(obs.x + obs.width/2 - 4, obsY - 8, 8, 8);
+        ctx.fillStyle = PALETTE.carrotOrange; ctx.beginPath();
+        ctx.moveTo(obs.x, obsY); ctx.lineTo(obs.x + obs.width, obsY); ctx.lineTo(obs.x + obs.width/2, obsY + obs.height);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = PALETTE.carrotLeaf; ctx.fillRect(obs.x + obs.width/2 - 4, obsY - 8, 8, 8);
 
         if (!obs.isKicked && obs.x + obs.width < player.x && !obs.passed) {
             score++; obs.passed = true;
         }
 
-        // 衝突判定
-        if (!obs.isKicked &&
-            player.x < obs.x + obs.width && player.x + player.width > obs.x &&
-            player.y < obsY + obs.height && player.y + player.height > obsY
-        ) {
+        if (!obs.isKicked && player.x < obs.x + obs.width && player.x + player.width > obs.x && player.y < obsY + obs.height && player.y + player.height > obsY) {
             if (player.isBig) {
-                obs.isKicked = true;
-                obs.y = obsY;
-                obs.kickedVY = -8;
-                score += 2; 
+                obs.isKicked = true; obs.y = obsY; obs.kickedVY = -8; score += 2; 
             } else {
                 gameState = 'GAMEOVER';
-                startMessage.innerHTML = `GAME OVER<br><span style="color:#ffeb3b;">SCORE: ${score}</span><br><span style="font-size:16px; color:#fff;">クリックで再挑戦</span>`;
+                startMessage.innerHTML = `GAME OVER<br><span style="color:#e57373;">SCORE: ${score}</span><br><span style="font-size:14px; color:#fff;">タップで再挑戦</span>`;
                 ui.style.display = 'flex';
             }
         }
-
         if (obs.x > canvas.width || obs.x + obs.width < 0) obstacles.splice(i, 1);
     }
 }
 
-// のりまきの処理
 function handleItems() {
     for (let i = items.length - 1; i >= 0; i--) {
         let item = items[i];
         if (gameState === 'PLAYING') {
-            item.x += item.vX; 
-            item.vX *= 0.95;   
-            
+            item.x += item.vX; item.vX *= 0.95;   
             if (!item.isGrounded) {
-                item.y += item.vY;
-                item.vY += 0.2; 
-                if (item.y + item.height >= GROUND_Y) {
-                    item.y = GROUND_Y - item.height; item.isGrounded = true;
-                    item.vX = -1.5; 
-                }
-            } else {
-                item.x -= 1.5; 
-            }
+                item.y += item.vY; item.vY += 0.2; 
+                if (item.y + item.height >= GROUND_Y) { item.y = GROUND_Y - item.height; item.isGrounded = true; item.vX = -1.5; }
+            } else { item.x -= 1.5; }
         }
 
-        // のりまき
-        ctx.fillStyle = '#111'; ctx.fillRect(item.x, item.y, item.width, item.height);
-        ctx.fillStyle = '#fff'; ctx.fillRect(item.x + 3, item.y + 3, item.width - 6, item.height - 6);
-        ctx.fillStyle = '#ff3333'; ctx.fillRect(item.x + 8, item.y + 8, item.width - 16, item.height - 16);
+        ctx.fillStyle = '#2d2d2d'; ctx.fillRect(item.x, item.y, item.width, item.height);
+        ctx.fillStyle = '#fafafa'; ctx.fillRect(item.x + 3, item.y + 3, item.width - 6, item.height - 6);
+        ctx.fillStyle = '#d16262'; ctx.fillRect(item.x + 8, item.y + 8, item.width - 16, item.height - 16);
 
-        // キャッチ
-        if (player.x < item.x + item.width && player.x + player.width > item.x &&
-            player.y < item.y + item.height && player.y + player.height > item.y) {
-            
-            player.isBig = true;
-            player.bigTimer = 300; 
-            player.width = player.baseWidth * 1.6;
-            player.height = player.baseHeight * 1.6;
-
-            if (item.parentShop) {
-                item.parentShop.yokohara.isEaten = true;
-            }
-
-            items.splice(i, 1);
-            continue;
+        if (player.x < item.x + item.width && player.x + player.width > item.x && player.y < item.y + item.height && player.y + player.height > item.y) {
+            player.isBig = true; 
+            // ★無敵状態を7秒（60fps × 7秒 = 420フレーム）に延長
+            player.bigTimer = 420; 
+            player.width = player.baseWidth * 1.6; player.height = player.baseHeight * 1.6;
+            if (item.parentShop) item.parentShop.yokohara.isEaten = true;
+            items.splice(i, 1); continue;
         }
         if (item.x + item.width < 0) items.splice(i, 1);
     }
 }
 
 function drawScore() {
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 18px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 3;
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left'; ctx.strokeStyle = '#37474f'; ctx.lineWidth = 3;
     let text = `SCORE: ${score}`;
-    if (player.isBig) {
-        text += ` 🔥むてきキック中! (${Math.ceil(player.bigTimer / 60)})`;
-        ctx.fillStyle = '#ffeb3b';
+    if (player.isBig) { 
+        text += ` ✨むてき! (${Math.ceil(player.bigTimer / 60)})`; 
+        ctx.fillStyle = '#fff59d'; // パステルイエローに変更してマイルドに
     }
     ctx.strokeText(text, 20, 35); ctx.fillText(text, 20, 35);
 }
 
+// ★たくちゃのスタート時の吹き出しを描画する関数
+function drawPlayerSpeech(px, py) {
+    if (gameState === 'PLAYING' && player.startMessageTimer > 0) {
+        player.startMessageTimer--;
+        
+        let msg = '「がんばるぞ!」';
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+        ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+        
+        let textWidth = ctx.measureText(msg).width + 16;
+        // キャラクターの少し上に吹き出しを配置
+        let bubbleX = px + player.width / 2;
+        let bubbleY = py - 15;
+        
+        ctx.fillRect(bubbleX - textWidth/2, bubbleY - 22, textWidth, 22);
+        ctx.strokeRect(bubbleX - textWidth/2, bubbleY - 22, textWidth, 22);
+        ctx.fillStyle = '#333'; ctx.fillText(msg, bubbleX, bubbleY - 7);
+    }
+}
+
 function resetGame() {
     player.width = player.baseWidth; player.height = player.baseHeight;
-    player.y = GROUND_Y - player.height;
-    player.velocity = 0; player.isGrounded = true;
-    player.isBig = false; player.bigTimer = 0;
-    obstacles = []; items = []; score = 0; spawnTimer = 0;
-    initShops();
+    player.y = GROUND_Y - player.height; player.velocity = 0; player.isGrounded = true; player.isBig = false; player.bigTimer = 0;
+    player.startMessageTimer = 0;
+    obstacles = []; items = []; score = 0; spawnTimer = 0; initShops();
 }
 
 function gameLoop() {
     frameCount++;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     drawShoppingStreet();
     drawCuteGround();
 
@@ -475,47 +373,29 @@ function gameLoop() {
         if (player.isBig) {
             player.bigTimer--;
             if (player.bigTimer <= 0) {
-                player.isBig = false;
-                player.width = player.baseWidth; player.height = player.baseHeight;
-                player.y = GROUND_Y - player.height;
+                player.isBig = false; player.width = player.baseWidth; player.height = player.baseHeight; player.y = GROUND_Y - player.height;
             }
         }
-
-        player.velocity += player.gravity;
-        player.y += player.velocity;
-
-        if (player.y + player.height >= GROUND_Y) {
-            player.y = GROUND_Y - player.height;
-            player.velocity = 0; player.isGrounded = true;
-        }
+        player.velocity += player.gravity; player.y += player.velocity;
+        if (player.y + player.height >= GROUND_Y) { player.y = GROUND_Y - player.height; player.velocity = 0; player.isGrounded = true; }
 
         spawnTimer++;
         if (spawnTimer >= nextSpawnInterval) {
-            // ★にんじんの「高さ」をランダム化（25px〜55px）
             let randHeight = Math.floor(Math.random() * 30) + 25;
-            // 高さに合わせて横幅も少し比率を変える（18px〜32px）
             let randWidth = Math.floor(randHeight * 0.6) + 3;
-
-            obstacles.push({ 
-                x: canvas.width, 
-                width: randWidth, 
-                height: randHeight, 
-                isKicked: false, 
-                kickedVY: 0 
-            });
-
-            spawnTimer = 0;
-            nextSpawnInterval = Math.floor(Math.random() * 80) + 60; 
+            obstacles.push({ x: canvas.width, width: randWidth, height: randHeight, isKicked: false, kickedVY: 0 });
+            spawnTimer = 0; nextSpawnInterval = Math.floor(Math.random() * 80) + 60; 
         }
     }
 
-    handleItems();
-    handleObstacles();
+    handleItems(); handleObstacles();
     
-    // たくちゃ描画
     let currentScale = player.isBig ? 1.6 : 1.0;
     let currentY = player.isBig ? (GROUND_Y - player.height) : player.y;
-    drawCharacter(player.x, currentY, 'takacha', frameCount, currentScale);
+    drawCachedCharacter(player.x, currentY, 'takacha', frameCount, currentScale);
+    
+    // ★「がんばるぞ！」の吹き出しを描画
+    drawPlayerSpeech(player.x, currentY);
     
     drawScore();
     requestAnimationFrame(gameLoop);
@@ -523,23 +403,24 @@ function gameLoop() {
 
 function triggerAction(e) {
     if (e.type === 'keydown' && e.code !== 'Space') return;
-    if (e.cancelable) e.preventDefault();
+    if (e.cancelable) e.preventDefault(); 
 
     if (gameState === 'START') {
         gameState = 'PLAYING'; ui.style.display = 'none'; initShops();
+        player.startMessageTimer = 240; // ★スタートから約2秒間（120フレーム）セリフを表示
     } else if (gameState === 'PLAYING') {
-        if (player.isGrounded) {
-            player.velocity = player.jumpForce; player.isGrounded = false;
-        }
+        if (player.isGrounded) { player.velocity = player.jumpForce; player.isGrounded = false; }
     } else if (gameState === 'GAMEOVER') {
         resetGame(); gameState = 'PLAYING'; ui.style.display = 'none';
+        player.startMessageTimer = 240; // ★リトライ時もセリフを表示
     }
 }
 
-window.addEventListener('mousedown', triggerAction);
 window.addEventListener('touchstart', triggerAction, { passive: false });
+window.addEventListener('mousedown', triggerAction);
 window.addEventListener('keydown', triggerAction);
 
+preRenderCharacters();
 initShops();
 gameLoop();
 </script>
