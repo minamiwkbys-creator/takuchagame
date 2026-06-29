@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- スマホのズーム・スクロール・ダブルタップ遅延を徹底排除 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>たくちゃの商店街ランニング</title>
     <style>
         body {
@@ -16,8 +17,10 @@
             color: #f5f5f5;
             font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
             overflow: hidden;
+            /* iPhone用の長押しメニュー・選択を完全禁止 */
             user-select: none;
             -webkit-user-select: none;
+            -webkit-touch-callout: none;
             touch-action: none;
         }
         h1 {
@@ -30,15 +33,21 @@
             position: relative;
             width: 95vw; 
             max-width: 600px;
+            /* ★iPhoneのGPUを強制起動して描画を高速化 */
+            -webkit-transform: translate3d(0,0,0);
+            transform: translate3d(0,0,0);
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
         }
         canvas {
             border: 4px solid #cfd8dc;
-            /* ★目に優しいくすんだペールブルーに変更 */
             background: #b0c8f0; 
             box-shadow: 0 0 15px rgba(0,0,0,0.5);
             display: block;
             width: 100%; 
             height: auto;
+            /* ★Canvas自体もGPUブースト */
+            image-rendering: pixelated; /* ドット絵を綺麗ににじまず出す */
         }
         #ui {
             position: absolute;
@@ -50,6 +59,7 @@
             justify-content: center;
             align-items: center;
             background: rgba(0, 0, 0, 0.25);
+            pointer-events: none;
         }
         .msg {
             font-size: 16px;
@@ -71,7 +81,7 @@
     <div id="canvasContainer">
         <canvas id="gameCanvas" width="600" height="350"></canvas>
         <div id="ui">
-            <div id="startMessage" class="msg">画面をタップ 又は スペースで開始！</div>
+            <div id="startMessage" class="msg">画面をタップで開始！</div>
         </div>
     </div>
 
@@ -88,18 +98,17 @@ let frameCount = 0;
 const GROUND_Y = canvas.height - 50;
 const D = 3; 
 
-// ★全体的に彩度を落とした、目に優しいマイルドなカラーパレット
 const PALETTE = {
     skin: '#fcdcb0',      
     takachaHair: '#3a3a3a', 
-    yokoharaHair: '#edd06d', // 落ち着いたマスタード金髪
-    shirtGreen: '#5fa375',   // くすんだ緑
-    pantsBlue: '#5c7299',    // グレイッシュな青
-    shoesRed: '#d16262',     // 優しいあずき色系の赤
-    brick: '#ad6c56',        // 落ち着いたレンガ色
+    yokoharaHair: '#edd06d', 
+    shirtGreen: '#5fa375',   
+    pantsBlue: '#5c7299',    
+    shoesRed: '#d16262',     
+    brick: '#ad6c56',        
     window: '#e3f2fd',
-    carrotOrange: '#f58247', // チカチカしないにんじん色
-    carrotLeaf: '#7cb374'    // 優しい葉っぱの緑
+    carrotOrange: '#f58247', 
+    carrotLeaf: '#7cb374'    
 };
 
 const player = {
@@ -115,7 +124,7 @@ const player = {
     isGrounded: true,
     isBig: false,
     bigTimer: 0,
-    startMessageTimer: 0 // ★「がんばるぞ！」用のタイマー
+    startMessageTimer: 0 
 };
 
 let obstacles = [];
@@ -126,7 +135,6 @@ let items = [];
 let shops = [];
 let shopSpawnCount = 0; 
 
-// ★お店のカラーもパレット調の優しいトーンに変更
 const shopTemplates = [
     { name: '八百屋', wall: '#f5eae1', roof: '#cc7474', tent: '#81b393' },
     { name: 'パン屋', wall: '#ede1d1', roof: '#7093c4', tent: '#d9a773' },
@@ -148,7 +156,6 @@ function preRenderCharacters() {
             cCtx.fillStyle = hairColor;
             
             if (type === 'takacha') {
-                // たくちゃ：丸っこい黒髪マッシュヘア
                 cCtx.fillRect(2*D, 0, 8*D, D); cCtx.fillRect(1*D, D, 10*D, D);
                 cCtx.fillRect(0, 2*D, 12*D, D); cCtx.fillRect(0, 3*D, 12*D, D);
             } else {
@@ -195,42 +202,45 @@ function initShops() {
     }
 }
 
+// ★iPhone用にピクセル座標を完全に整数化（Math.round）して描画超高速化
 function drawCachedCharacter(x, y, type, animFrame, scale = 1.0) {
     const legPattern = Math.floor(animFrame / 8) % 2;
     const img = charCache[type][legPattern];
-    const w = 12 * D * scale;
-    const h = 14 * D * scale;
-    const bobbing = (legPattern === 0 && gameState === 'PLAYING') ? (D * scale) : 0;
-    ctx.drawImage(img, Math.round(x), Math.round(y + bobbing), Math.round(w), Math.round(h));
+    const w = Math.round(12 * D * scale);
+    const h = Math.round(14 * D * scale);
+    const bobbing = (legPattern === 0 && gameState === 'PLAYING') ? Math.round(D * scale) : 0;
+    ctx.drawImage(img, Math.round(x), Math.round(y + bobbing), w, h);
 }
 
 function drawShoppingStreet() {
     shops.forEach(shop => {
         if (gameState === 'PLAYING') shop.x -= 1.5;
         if (shop.x + shop.width < 0) {
-            shop.x = canvas.width + Math.random() * 30;
+            shop.x = canvas.width + Math.round(Math.random() * 30);
             shopSpawnCount++; 
             shop.yokohara.hasSpawned = (shopSpawnCount % 7 === 0);
             shop.yokohara.hasThrown = false; shop.yokohara.isEaten = false; shop.yokohara.throwTimer = 0;
         }
 
-        const sy = GROUND_Y - shop.height;
-        ctx.fillStyle = shop.roof; ctx.fillRect(shop.x - 5, sy - 15, shop.width + 10, 15);
-        ctx.fillStyle = shop.wall; ctx.fillRect(shop.x, sy, shop.width, shop.height);
-        ctx.fillStyle = shop.tent; ctx.fillRect(shop.x, sy + 5, shop.width, 15);
+        const sy = Math.round(GROUND_Y - shop.height);
+        const sx = Math.round(shop.x);
+        
+        ctx.fillStyle = shop.roof; ctx.fillRect(sx - 5, sy - 15, shop.width + 10, 15);
+        ctx.fillStyle = shop.wall; ctx.fillRect(sx, sy, shop.width, shop.height);
+        ctx.fillStyle = shop.tent; ctx.fillRect(sx, sy + 5, shop.width, 15);
         ctx.fillStyle = '#fff';
-        for(let j=10; j<shop.width; j+=30) ctx.fillRect(shop.x + j, sy + 5, 15, 15);
+        for(let j=10; j<shop.width; j+=30) ctx.fillRect(sx + j, sy + 5, 15, 15);
 
-        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(shop.x + 20, sy - 12, shop.width - 40, 12);
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(sx + 20, sy - 12, shop.width - 40, 12);
         ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(shop.name, shop.x + shop.width/2, sy - 2);
+        ctx.fillText(shop.name, sx + shop.width/2, sy - 2);
 
-        ctx.fillStyle = PALETTE.window; ctx.fillRect(shop.x + 50, sy + 30, 40, 40);
-        ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 2; ctx.strokeRect(shop.x + 50, sy + 30, 40, 40);
-        ctx.fillStyle = '#8d6e63'; ctx.fillRect(shop.x + 15, GROUND_Y - 45, 25, 45);
+        ctx.fillStyle = PALETTE.window; ctx.fillRect(sx + 50, sy + 30, 40, 40);
+        ctx.strokeStyle = '#90a4ae'; ctx.lineWidth = 2; ctx.strokeRect(sx + 50, sy + 30, 40, 40);
+        ctx.fillStyle = '#8d6e63'; ctx.fillRect(sx + 15, GROUND_Y - 45, 25, 45);
 
         if (shop.yokohara.hasSpawned) {
-            let yokoX = shop.x + shop.width - 25;
+            let yokoX = sx + shop.width - 25;
             let yokoY = GROUND_Y - (14 * D);
             
             drawCachedCharacter(yokoX, yokoY, 'yokohara', frameCount, 1.0);
@@ -249,9 +259,9 @@ function drawShoppingStreet() {
             ctx.fillStyle = '#fff'; ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
             ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
             let textWidth = ctx.measureText(msg).width + 16;
-            ctx.fillRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
-            ctx.strokeRect(yokoX + 15 - textWidth/2, yokoY - 28, textWidth, 22);
-            ctx.fillStyle = '#333'; ctx.fillText(msg, yokoX + 15, yokoY - 13);
+            ctx.fillRect(Math.round(yokoX + 15 - textWidth/2), yokoY - 28, textWidth, 22);
+            ctx.strokeRect(Math.round(yokoX + 15 - textWidth/2), yokoY - 28, textWidth, 22);
+            ctx.fillStyle = '#333'; ctx.fillText(msg, Math.round(yokoX + 15), yokoY - 13);
         }
     });
 }
@@ -275,12 +285,13 @@ function handleObstacles() {
             }
         }
 
-        let obsY = obs.isKicked ? obs.y : (GROUND_Y - obs.height);
+        let obsY = Math.round(obs.isKicked ? obs.y : (GROUND_Y - obs.height));
+        let obsX = Math.round(obs.x);
 
         ctx.fillStyle = PALETTE.carrotOrange; ctx.beginPath();
-        ctx.moveTo(obs.x, obsY); ctx.lineTo(obs.x + obs.width, obsY); ctx.lineTo(obs.x + obs.width/2, obsY + obs.height);
+        ctx.moveTo(obsX, obsY); ctx.lineTo(obsX + obs.width, obsY); ctx.lineTo(obsX + obs.width/2, obsY + obs.height);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle = PALETTE.carrotLeaf; ctx.fillRect(obs.x + obs.width/2 - 4, obsY - 8, 8, 8);
+        ctx.fillStyle = PALETTE.carrotLeaf; ctx.fillRect(Math.round(obsX + obs.width/2 - 4), obsY - 8, 8, 8);
 
         if (!obs.isKicked && obs.x + obs.width < player.x && !obs.passed) {
             score++; obs.passed = true;
@@ -310,14 +321,15 @@ function handleItems() {
             } else { item.x -= 1.5; }
         }
 
-        ctx.fillStyle = '#2d2d2d'; ctx.fillRect(item.x, item.y, item.width, item.height);
-        ctx.fillStyle = '#fafafa'; ctx.fillRect(item.x + 3, item.y + 3, item.width - 6, item.height - 6);
-        ctx.fillStyle = '#d16262'; ctx.fillRect(item.x + 8, item.y + 8, item.width - 16, item.height - 16);
+        let ix = Math.round(item.x);
+        let iy = Math.round(item.y);
+
+        ctx.fillStyle = '#2d2d2d'; ctx.fillRect(ix, iy, item.width, item.height);
+        ctx.fillStyle = '#fafafa'; ctx.fillRect(ix + 3, iy + 3, item.width - 6, item.height - 6);
+        ctx.fillStyle = '#d16262'; ctx.fillRect(ix + 8, iy + 8, item.width - 16, item.height - 16);
 
         if (player.x < item.x + item.width && player.x + player.width > item.x && player.y < item.y + item.height && player.y + player.height > item.y) {
-            player.isBig = true; 
-            // ★無敵状態を7秒（60fps × 7秒 = 420フレーム）に延長
-            player.bigTimer = 420; 
+            player.isBig = true; player.bigTimer = 420; 
             player.width = player.baseWidth * 1.6; player.height = player.baseHeight * 1.6;
             if (item.parentShop) item.parentShop.yokohara.isEaten = true;
             items.splice(i, 1); continue;
@@ -329,29 +341,21 @@ function handleItems() {
 function drawScore() {
     ctx.fillStyle = '#fff'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left'; ctx.strokeStyle = '#37474f'; ctx.lineWidth = 3;
     let text = `SCORE: ${score}`;
-    if (player.isBig) { 
-        text += ` ✨むてき! (${Math.ceil(player.bigTimer / 60)})`; 
-        ctx.fillStyle = '#fff59d'; // パステルイエローに変更してマイルドに
-    }
+    if (player.isBig) { text += ` ✨むてき! (${Math.ceil(player.bigTimer / 60)})`; ctx.fillStyle = '#fff59d'; }
     ctx.strokeText(text, 20, 35); ctx.fillText(text, 20, 35);
 }
 
-// ★たくちゃのスタート時の吹き出しを描画する関数
 function drawPlayerSpeech(px, py) {
     if (gameState === 'PLAYING' && player.startMessageTimer > 0) {
         player.startMessageTimer--;
-        
         let msg = '「がんばるぞ!」';
         ctx.fillStyle = '#fff'; ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
         ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
-        
         let textWidth = ctx.measureText(msg).width + 16;
-        // キャラクターの少し上に吹き出しを配置
-        let bubbleX = px + player.width / 2;
-        let bubbleY = py - 15;
-        
-        ctx.fillRect(bubbleX - textWidth/2, bubbleY - 22, textWidth, 22);
-        ctx.strokeRect(bubbleX - textWidth/2, bubbleY - 22, textWidth, 22);
+        let bubbleX = Math.round(px + player.width / 2);
+        let bubbleY = Math.round(py - 15);
+        ctx.fillRect(Math.round(bubbleX - textWidth/2), bubbleY - 22, textWidth, 22);
+        ctx.strokeRect(Math.round(bubbleX - textWidth/2), bubbleY - 22, textWidth, 22);
         ctx.fillStyle = '#333'; ctx.fillText(msg, bubbleX, bubbleY - 7);
     }
 }
@@ -393,8 +397,6 @@ function gameLoop() {
     let currentScale = player.isBig ? 1.6 : 1.0;
     let currentY = player.isBig ? (GROUND_Y - player.height) : player.y;
     drawCachedCharacter(player.x, currentY, 'takacha', frameCount, currentScale);
-    
-    // ★「がんばるぞ！」の吹き出しを描画
     drawPlayerSpeech(player.x, currentY);
     
     drawScore();
@@ -407,15 +409,16 @@ function triggerAction(e) {
 
     if (gameState === 'START') {
         gameState = 'PLAYING'; ui.style.display = 'none'; initShops();
-        player.startMessageTimer = 240; // ★スタートから約2秒間（120フレーム）セリフを表示
+        player.startMessageTimer = 120; 
     } else if (gameState === 'PLAYING') {
         if (player.isGrounded) { player.velocity = player.jumpForce; player.isGrounded = false; }
     } else if (gameState === 'GAMEOVER') {
         resetGame(); gameState = 'PLAYING'; ui.style.display = 'none';
-        player.startMessageTimer = 240; // ★リトライ時もセリフを表示
+        player.startMessageTimer = 120; 
     }
 }
 
+// iPhone用のタッチ判定を最優先
 window.addEventListener('touchstart', triggerAction, { passive: false });
 window.addEventListener('mousedown', triggerAction);
 window.addEventListener('keydown', triggerAction);
